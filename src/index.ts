@@ -127,8 +127,9 @@ export default {
 		// CORS headers
 		const corsHeaders = {
 			"Access-Control-Allow-Origin": "*",
-			"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-			"Access-Control-Allow-Headers": "*",
+			"Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+			"Access-Control-Allow-Headers": "Content-Type, Accept, mcp-session-id, mcp-protocol-version",
+			"Access-Control-Expose-Headers": "mcp-session-id",
 			"Access-Control-Max-Age": "86400",
 		};
 
@@ -137,40 +138,41 @@ export default {
 			return new Response(null, { headers: corsHeaders });
 		}
 
-		if (url.pathname === "/sse" || url.pathname === "/sse/message") {
-			console.log("Handling SSE request");
-			return MyMCP.serveSSE("/sse").fetch(request, env, ctx).then(resp => {
-				// Determine if we need to wrap the response to add CORS headers
-				// The SDK might add them, but let's ensure they are present.
-				const newHeaders = new Headers(resp.headers);
-				for (const [key, value] of Object.entries(corsHeaders)) {
-					if (!newHeaders.has(key)) {
-						newHeaders.set(key, value);
-					}
+		// Helper to add CORS headers to response
+		const addCors = async (respPromise: Promise<Response>) => {
+			const resp = await respPromise;
+			const newHeaders = new Headers(resp.headers);
+			for (const [key, value] of Object.entries(corsHeaders)) {
+				if (!newHeaders.has(key)) {
+					newHeaders.set(key, value);
 				}
-				return new Response(resp.body, {
-					status: resp.status,
-					statusText: resp.statusText,
-					headers: newHeaders
-				});
+			}
+			return new Response(resp.body, {
+				status: resp.status,
+				statusText: resp.statusText,
+				headers: newHeaders
 			});
+		};
+
+		// Handle /sse endpoint - supports both SSE (GET) and Streamable HTTP (POST)
+		if (url.pathname === "/sse" || url.pathname.startsWith("/sse/")) {
+			console.log(`Handling /sse request: ${request.method}`);
+
+			// POST = Streamable HTTP transport (newer)
+			// GET = SSE transport (older, still supported)
+			if (request.method === "POST") {
+				console.log("Using Streamable HTTP transport (POST)");
+				return addCors(MyMCP.serve("/sse").fetch(request, env, ctx));
+			} else {
+				console.log("Using SSE transport (GET)");
+				return addCors(MyMCP.serveSSE("/sse").fetch(request, env, ctx));
+			}
 		}
 
-		if (url.pathname === "/mcp") {
+		// Handle /mcp endpoint - Streamable HTTP only
+		if (url.pathname === "/mcp" || url.pathname.startsWith("/mcp/")) {
 			console.log("Handling /mcp request");
-			return MyMCP.serve("/mcp").fetch(request, env, ctx).then(resp => {
-				const newHeaders = new Headers(resp.headers);
-				for (const [key, value] of Object.entries(corsHeaders)) {
-					if (!newHeaders.has(key)) {
-						newHeaders.set(key, value);
-					}
-				}
-				return new Response(resp.body, {
-					status: resp.status,
-					statusText: resp.statusText,
-					headers: newHeaders
-				});
-			});
+			return addCors(MyMCP.serve("/mcp").fetch(request, env, ctx));
 		}
 
 		console.warn(`404 Not Found: ${url.pathname}`);
