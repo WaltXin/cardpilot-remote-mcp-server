@@ -35,6 +35,7 @@ export class MyMCP extends McpAgent {
 	});
 
 	async init() {
+		console.log("Initializing MyMCP agent...");
 		this.server.tool(
 			"get-cards",
 			{
@@ -54,10 +55,11 @@ export class MyMCP extends McpAgent {
 					.describe("Sort direction"),
 			},
 			async ({ sort, direction }) => {
+				console.log(`Tool 'get-cards' called with sort=${sort}, direction=${direction}`);
 				const url = new URL(
 					"https://fqrqqph16l.execute-api.us-west-2.amazonaws.com/cards",
 				);
-				
+
 				if (sort) {
 					url.searchParams.set("sort", sort);
 				}
@@ -66,6 +68,7 @@ export class MyMCP extends McpAgent {
 				}
 
 				try {
+					console.log(`Fetching from ${url.toString()}`);
 					const response = await fetch(url.toString(), {
 						headers: {
 							Accept: "application/json",
@@ -73,6 +76,7 @@ export class MyMCP extends McpAgent {
 					});
 
 					if (!response.ok) {
+						console.error(`Error fetching cards: ${response.status} ${response.statusText}`);
 						return {
 							content: [
 								{
@@ -85,6 +89,7 @@ export class MyMCP extends McpAgent {
 					}
 
 					const data = (await response.json()) as CardResponse;
+					console.log(`Successfully fetched ${data.cards.length} cards`);
 
 					return {
 						content: [
@@ -97,6 +102,7 @@ export class MyMCP extends McpAgent {
 				} catch (error) {
 					const errorMessage =
 						error instanceof Error ? error.message : String(error);
+					console.error(`Fetch exception: ${errorMessage}`);
 					return {
 						content: [
 							{
@@ -112,18 +118,62 @@ export class MyMCP extends McpAgent {
 	}
 }
 
+
 export default {
 	fetch(request: Request, env: Env, ctx: ExecutionContext) {
 		const url = new URL(request.url);
+		console.log(`Incoming request: ${request.method} ${url.pathname}`);
+
+		// CORS headers
+		const corsHeaders = {
+			"Access-Control-Allow-Origin": "*",
+			"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+			"Access-Control-Allow-Headers": "*",
+			"Access-Control-Max-Age": "86400",
+		};
+
+		// Handle CORS preflight
+		if (request.method === "OPTIONS") {
+			return new Response(null, { headers: corsHeaders });
+		}
 
 		if (url.pathname === "/sse" || url.pathname === "/sse/message") {
-			return MyMCP.serveSSE("/sse").fetch(request, env, ctx);
+			console.log("Handling SSE request");
+			return MyMCP.serveSSE("/sse").fetch(request, env, ctx).then(resp => {
+				// Determine if we need to wrap the response to add CORS headers
+				// The SDK might add them, but let's ensure they are present.
+				const newHeaders = new Headers(resp.headers);
+				for (const [key, value] of Object.entries(corsHeaders)) {
+					if (!newHeaders.has(key)) {
+						newHeaders.set(key, value);
+					}
+				}
+				return new Response(resp.body, {
+					status: resp.status,
+					statusText: resp.statusText,
+					headers: newHeaders
+				});
+			});
 		}
 
 		if (url.pathname === "/mcp") {
-			return MyMCP.serve("/mcp").fetch(request, env, ctx);
+			console.log("Handling /mcp request");
+			return MyMCP.serve("/mcp").fetch(request, env, ctx).then(resp => {
+				const newHeaders = new Headers(resp.headers);
+				for (const [key, value] of Object.entries(corsHeaders)) {
+					if (!newHeaders.has(key)) {
+						newHeaders.set(key, value);
+					}
+				}
+				return new Response(resp.body, {
+					status: resp.status,
+					statusText: resp.statusText,
+					headers: newHeaders
+				});
+			});
 		}
 
-		return new Response("Not found", { status: 404 });
+		console.warn(`404 Not Found: ${url.pathname}`);
+		return new Response("Not found", { status: 404, headers: corsHeaders });
 	},
 };
