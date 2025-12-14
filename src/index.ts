@@ -2,53 +2,111 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { McpAgent } from "agents/mcp";
 import { z } from "zod";
 
+interface CardDetails {
+	rewards: number;
+	perks: number;
+	fees: number;
+}
+
+interface Card {
+	cardId: string;
+	name: string;
+	bank: string;
+	annualFee: number;
+	score: number;
+	details: CardDetails;
+	[key: string]: unknown;
+}
+
+interface CardResponse {
+	cards: Card[];
+	meta: {
+		total: number;
+		sort: string;
+		direction: string;
+	};
+}
+
 // Define our MCP agent with tools
 export class MyMCP extends McpAgent {
 	server = new McpServer({
-		name: "Authless Calculator",
+		name: "CardPilot Cards",
 		version: "1.0.0",
 	});
 
 	async init() {
-		// Simple addition tool
-		this.server.tool("add", { a: z.number(), b: z.number() }, async ({ a, b }) => ({
-			content: [{ type: "text", text: String(a + b) }],
-		}));
-
-		// Calculator tool with multiple operations
 		this.server.tool(
-			"calculate",
+			"get-cards",
 			{
-				operation: z.enum(["add", "subtract", "multiply", "divide"]),
-				a: z.number(),
-				b: z.number(),
+				sort: z
+					.enum([
+						"recommended",
+						"welcome_offer",
+						"interest_rate",
+						"annual_fee",
+						"net_value",
+					])
+					.optional()
+					.describe("Sort criteria for the cards"),
+				direction: z
+					.enum(["asc", "desc"])
+					.optional()
+					.describe("Sort direction"),
 			},
-			async ({ operation, a, b }) => {
-				let result: number;
-				switch (operation) {
-					case "add":
-						result = a + b;
-						break;
-					case "subtract":
-						result = a - b;
-						break;
-					case "multiply":
-						result = a * b;
-						break;
-					case "divide":
-						if (b === 0)
-							return {
-								content: [
-									{
-										type: "text",
-										text: "Error: Cannot divide by zero",
-									},
-								],
-							};
-						result = a / b;
-						break;
+			async ({ sort, direction }) => {
+				const url = new URL(
+					"https://fqrqqph16l.execute-api.us-west-2.amazonaws.com/cards",
+				);
+				
+				if (sort) {
+					url.searchParams.set("sort", sort);
 				}
-				return { content: [{ type: "text", text: String(result) }] };
+				if (direction) {
+					url.searchParams.set("direction", direction);
+				}
+
+				try {
+					const response = await fetch(url.toString(), {
+						headers: {
+							Accept: "application/json",
+						},
+					});
+
+					if (!response.ok) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: `Error fetching cards: ${response.status} ${response.statusText}`,
+								},
+							],
+							isError: true,
+						};
+					}
+
+					const data = (await response.json()) as CardResponse;
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(data, null, 2),
+							},
+						],
+					};
+				} catch (error) {
+					const errorMessage =
+						error instanceof Error ? error.message : String(error);
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Failed to fetch cards: ${errorMessage}`,
+							},
+						],
+						isError: true,
+					};
+				}
 			},
 		);
 	}
