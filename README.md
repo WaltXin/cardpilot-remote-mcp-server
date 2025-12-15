@@ -10,12 +10,79 @@ This is a remote [MCP (Model Context Protocol)](https://modelcontextprotocol.io/
 
 ## Available Tools
 
-### `get-cards`
-Fetches a ranked list of credit cards with details (annual fee, rewards, perks, etc.).
+### 1. `get-cards`
+Fetches a list of credit cards with detailed metadata, suitable for ranking and comparison.
 
-**Arguments:**
-- `sort` (optional): `recommended`, `welcome_offer`, `interest_rate`, `annual_fee`, `net_value`
-- `direction` (optional): `asc`, `desc`
+**Input parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `sort` | `string` (enum) | Sort criteria: `recommended`, `welcome_offer`, `interest_rate`, `annual_fee`, `net_value` |
+| `direction` | `string` (enum) | Sort direction: `asc`, `desc` |
+| `ids` | `string` | Comma-separated list of card IDs (e.g., `card-a,card-b`) |
+| `bank` | `string` | Filter by bank name (e.g., "TD", "RBC") |
+| `category` | `string` | Filter by category (e.g., "travel", "cash back") |
+| `noFee` | `boolean` | Set to `true` to filter for no-annual-fee cards |
+
+**Output structure:**
+```json
+{
+  "cards": [
+    {
+      "cardId": "string",
+      "name": "string",
+      "bank": "string",
+      "annualFee": number,
+      "score": number,
+      "details": { "rewards": number, "perks": number, "fees": number, ... }
+    }
+  ],
+  "meta": { "total": number, "sort": "string", "direction": "string" }
+}
+```
+
+### 2. `get-guides`
+Fetches a list of educational guide metadata. This tool is optimized for chatbots to provide links to full articles.
+
+**Input parameters:** None
+
+**Output structure:**
+```json
+{
+  "guides": [
+    {
+      "slug": "string",
+      "title": "string",
+      "intro": "string",
+      "icon": "string (emoji)",
+      "url": "string"
+    }
+  ]
+}
+```
+
+## Agent System Prompt
+If you are using this MCP server with an LLM Agent (like OpenAI Custom GPT), add the following to your System Instructions:
+
+```text
+You are an expert credit card advisor powered by CardPilot data.
+
+1. **Card Recommendations**:
+   - ALWAYS use the `get-cards` tool to fetch real-time data before making recommendations.
+   - Use the `sort` parameter to align with user priorities (e.g., `sort="annual_fee"` for cheap cards).
+   - Use filters like `bank="TD"` or `category="travel"` to narrow down results.
+   - For "no fee" requests, explicitly set `noFee=true`.
+   - When presenting cards, list the Name, Annual Fee, Welcome Bonus, and a brief "Why it fits" explanation.
+   - Link the card name to the `applyUrl` or CardPilot detail page if available.
+
+2. **Educational Content**:
+   - If a user asks general questions (e.g., "Cash back vs Points"), use `get-guides` to see if there is a relevant article.
+   - Provide the answer based on the guide's `intro` and encourage the user to read the full guide by providing the `url`.
+
+3. **General Rules**:
+   - Do not make up card details. If data is missing, state that.
+   - Be concise and helpful.
+```
 
 ## How to Use
 
