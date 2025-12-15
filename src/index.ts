@@ -118,6 +118,84 @@ export class MyMCP extends McpAgent {
 	}
 }
 
+// Helper function to add keepalive pings to SSE stream
+function addKeepAlivePings(response: Response, corsHeaders: Record<string, string>): Response {
+	const contentType = response.headers.get("content-type") || "";
+
+	// Only process SSE streams
+	if (!contentType.includes("text/event-stream") || !response.body) {
+		const newHeaders = new Headers(response.headers);
+		for (const [key, value] of Object.entries(corsHeaders)) {
+			if (!newHeaders.has(key)) {
+				newHeaders.set(key, value);
+			}
+		}
+		return new Response(response.body, {
+			status: response.status,
+			statusText: response.statusText,
+			headers: newHeaders
+		});
+	}
+
+	const reader = response.body.getReader();
+	const encoder = new TextEncoder();
+	const decoder = new TextDecoder();
+
+	let pingInterval: ReturnType<typeof setInterval> | null = null;
+	let streamEnded = false;
+
+	const stream = new ReadableStream({
+		async start(controller) {
+			// Send initial ping after a short delay
+			pingInterval = setInterval(() => {
+				if (!streamEnded) {
+					try {
+						controller.enqueue(encoder.encode("event: ping\ndata: ping\n\n"));
+					} catch (e) {
+						// Stream may have closed
+						if (pingInterval) clearInterval(pingInterval);
+					}
+				}
+			}, 15000); // Send ping every 15 seconds
+		},
+		async pull(controller) {
+			try {
+				const { done, value } = await reader.read();
+				if (done) {
+					streamEnded = true;
+					if (pingInterval) clearInterval(pingInterval);
+					// Send a final ping before closing
+					controller.enqueue(encoder.encode("event: ping\ndata: ping\n\n"));
+					controller.close();
+					return;
+				}
+				controller.enqueue(value);
+			} catch (e) {
+				streamEnded = true;
+				if (pingInterval) clearInterval(pingInterval);
+				controller.error(e);
+			}
+		},
+		cancel() {
+			streamEnded = true;
+			if (pingInterval) clearInterval(pingInterval);
+			reader.cancel();
+		}
+	});
+
+	const newHeaders = new Headers(response.headers);
+	for (const [key, value] of Object.entries(corsHeaders)) {
+		if (!newHeaders.has(key)) {
+			newHeaders.set(key, value);
+		}
+	}
+
+	return new Response(stream, {
+		status: response.status,
+		statusText: response.statusText,
+		headers: newHeaders
+	});
+}
 
 export default {
 	fetch(request: Request, env: Env, ctx: ExecutionContext) {
@@ -138,20 +216,10 @@ export default {
 			return new Response(null, { headers: corsHeaders });
 		}
 
-		// Helper to add CORS headers to response
-		const addCors = async (respPromise: Promise<Response>) => {
+		// Helper to add CORS headers and keepalive pings to response
+		const addCorsAndPings = async (respPromise: Promise<Response>) => {
 			const resp = await respPromise;
-			const newHeaders = new Headers(resp.headers);
-			for (const [key, value] of Object.entries(corsHeaders)) {
-				if (!newHeaders.has(key)) {
-					newHeaders.set(key, value);
-				}
-			}
-			return new Response(resp.body, {
-				status: resp.status,
-				statusText: resp.statusText,
-				headers: newHeaders
-			});
+			return addKeepAlivePings(resp, corsHeaders);
 		};
 
 		// Handle /sse endpoint - supports both SSE (GET) and Streamable HTTP (POST)
@@ -162,17 +230,17 @@ export default {
 			// GET = SSE transport (older, still supported)
 			if (request.method === "POST") {
 				console.log("Using Streamable HTTP transport (POST)");
-				return addCors(MyMCP.serve("/sse").fetch(request, env, ctx));
+				return addCorsAndPings(MyMCP.serve("/sse").fetch(request, env, ctx));
 			} else {
 				console.log("Using SSE transport (GET)");
-				return addCors(MyMCP.serveSSE("/sse").fetch(request, env, ctx));
+				return addCorsAndPings(MyMCP.serveSSE("/sse").fetch(request, env, ctx));
 			}
 		}
 
 		// Handle /mcp endpoint - Streamable HTTP only
 		if (url.pathname === "/mcp" || url.pathname.startsWith("/mcp/")) {
 			console.log("Handling /mcp request");
-			return addCors(MyMCP.serve("/mcp").fetch(request, env, ctx));
+			return addCorsAndPings(MyMCP.serve("/mcp").fetch(request, env, ctx));
 		}
 
 		console.warn(`404 Not Found: ${url.pathname}`);
