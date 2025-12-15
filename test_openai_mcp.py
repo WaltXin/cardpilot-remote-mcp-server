@@ -19,52 +19,57 @@ def test_mcp_server():
     client = OpenAI()
     
     # Test local Ngrok tunnel
-    ngrok_url = "https://e31ef5d9bbbc.ngrok-free.app/mcp"
+    ngrok_url = "https://232223f5e5e4.ngrok-free.app/mcp"
     print(f"Testing Local via Ngrok: {ngrok_url}")
     print("-" * 60)
     
-    try:
-        resp = client.responses.create(
-            model="gpt-4o",
-            tools=[
-                {
-                    "type": "mcp",
-                    "server_label": "cardpilot_local",
-                    "server_description": "CardPilot Local Test",
-                    # "server_url": "https://cardpilot-remote-mcp-server.mcps.workers.dev/mcp",
-                    "server_url": ngrok_url,
-                    "require_approval": "never",
-                },
-            ],
-            input="What are the top 3 recommended credit cards? Use the get-cards tool.",
-        )
-        
-        print("\n✅ Ngrok Tunnel SUCCESS!")
-        print("-" * 60)
+    # Updated test questions based on new tool capabilities
+    test_questions = [
+        "What are the top 3 recommended credit cards?",
+        "I'm new to credit cards. Should I get cash back or points?",
+        "Show me all the cash back cards available.",
+        "I'm looking for a travel card from TD.",
+        "Do you have any recommendations for cards with no annual fee?",
+        "Can you give me the details for the TD Aeroplan Visa Infinite Card?",
+        "What is the best rated card for groceries that doesn't cost anything to hold?"  
+    ]
 
-        print(resp.output_text)
-        
-        # Print details about MCP tool calls if any
-        print("\n" + "-" * 60)
-        print("Response details:")
-        for item in resp.output:
-            if hasattr(item, 'type'):
-                print(f"  - {item.type}")
-                if item.type == "mcp_list_tools":
-                    print(f"    Tools found: {[t.name for t in item.tools]}")
-                elif item.type == "mcp_call":
-                    print(f"    Tool called: {item.name}")
-                    print(f"    Arguments: {item.arguments}")
-                    if item.error:
-                        print(f"    Error: {item.error}")
-        
-    except Exception as e:
-        print(f"\n❌ ERROR: {e}")
-        print("\nPossible issues:")
-        print("  1. OPENAI_API_KEY not set")
-        print("  2. Your OpenAI account may not have access to the Responses API")
-        print("  3. The MCP server may be unreachable")
-        raise
+    for question in test_questions:
+        print(f"\n❓ Question: {question}")
+        print("-" * 60)
+        try:
+            resp = client.responses.create(
+                model="gpt-4o",
+                tools=[
+                    {
+                        "type": "mcp",
+                        "server_label": "cardpilot_local",
+                        "server_description": "CardPilot Local Test",
+                        "server_url": ngrok_url,
+                        "require_approval": "never",
+                    },
+                ],
+                input=question,
+            )
+            
+            print(resp.output_text)
+            
+            # Print details about MCP tool calls if any
+            # print("\n" + "-" * 20)
+            # print("Response details:")
+            for item in resp.output:
+                if hasattr(item, 'type'):
+                    # print(f"  - {item.type}")
+                    if item.type == "mcp_call":
+                        print(f"    🛠️ Tool called: {item.name}")
+                        print(f"    Arguments: {item.arguments}")
+                        if item.error:
+                            print(f"    Error: {item.error}")
+            
+        except Exception as e:
+            print(f"\n❌ ERROR: {e}")
+            
+    print("\n✅ Verification Complete!")
 
 if __name__ == "__main__":
     test_mcp_server()

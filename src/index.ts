@@ -36,6 +36,65 @@ export class MyMCP extends McpAgent {
 
 	async init() {
 		console.log("Initializing MyMCP agent...");
+
+		// Tool: get-guides
+		this.server.tool(
+			"get-guides",
+			{},
+			async () => {
+				console.log("Tool 'get-guides' called");
+				const url = "https://fqrqqph16l.execute-api.us-west-2.amazonaws.com/guides";
+
+				try {
+					console.log(`Fetching from ${url}`);
+					const response = await fetch(url, {
+						headers: {
+							Accept: "application/json",
+						},
+					});
+
+					if (!response.ok) {
+						console.error(`Error fetching guides: ${response.status} ${response.statusText}`);
+						return {
+							content: [
+								{
+									type: "text",
+									text: `Error fetching guides: ${response.status} ${response.statusText}`,
+								},
+							],
+							isError: true,
+						};
+					}
+
+					const data = await response.json();
+					console.log(`Successfully fetched guides`);
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(data, null, 2),
+							},
+						],
+					};
+				} catch (error) {
+					const errorMessage =
+						error instanceof Error ? error.message : String(error);
+					console.error(`Fetch exception: ${errorMessage}`);
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Failed to fetch guides: ${errorMessage}`,
+							},
+						],
+						isError: true,
+					};
+				}
+			}
+		);
+
+		// Tool: get-cards
 		this.server.tool(
 			"get-cards",
 			{
@@ -53,19 +112,26 @@ export class MyMCP extends McpAgent {
 					.enum(["asc", "desc"])
 					.optional()
 					.describe("Sort direction"),
+				ids: z.string().optional().describe("Comma-separated list of card IDs"),
+				bank: z.string().optional().describe("Filter by bank name"),
+				category: z.string().optional().describe("Filter by category/rewards"),
+				noFee: z.boolean().optional().describe("Filter for no-annual-fee cards"),
 			},
-			async ({ sort, direction }) => {
-				console.log(`Tool 'get-cards' called with sort=${sort}, direction=${direction}`);
+			async ({ sort, direction, ids, bank, category, noFee }) => {
+				console.log(
+					`Tool 'get-cards' called with params: ${JSON.stringify({ sort, direction, ids, bank, category, noFee })}`
+				);
 				const url = new URL(
 					"https://fqrqqph16l.execute-api.us-west-2.amazonaws.com/cards",
 				);
 
-				if (sort) {
-					url.searchParams.set("sort", sort);
-				}
-				if (direction) {
-					url.searchParams.set("direction", direction);
-				}
+				if (sort) url.searchParams.set("sort", sort);
+				if (direction) url.searchParams.set("direction", direction);
+				if (ids) url.searchParams.set("ids", ids);
+				if (bank) url.searchParams.set("bank", bank);
+				if (category) url.searchParams.set("category", category);
+				// The API expects boolean parameters as strings if they are query params like ?noFee=true
+				if (noFee !== undefined) url.searchParams.set("noFee", String(noFee));
 
 				try {
 					console.log(`Fetching from ${url.toString()}`);
