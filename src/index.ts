@@ -116,10 +116,14 @@ export class MyMCP extends McpAgent {
 				bank: z.string().optional().describe("Filter by bank name"),
 				category: z.string().optional().describe("Filter by category/rewards"),
 				noFee: z.boolean().optional().describe("Filter for no-annual-fee cards"),
+				persona: z
+					.enum(["average", "student", "newcomer", "premium"])
+					.optional()
+					.describe("Target persona for tailored ranking (average, student, newcomer, premium)"),
 			},
-			async ({ sort, direction, ids, bank, category, noFee }) => {
+			async ({ sort, direction, ids, bank, category, noFee, persona }) => {
 				console.log(
-					`Tool 'get-cards' called with params: ${JSON.stringify({ sort, direction, ids, bank, category, noFee })}`
+					`Tool 'get-cards' called with params: ${JSON.stringify({ sort, direction, ids, bank, category, noFee, persona })}`
 				);
 				const url = new URL(
 					"https://fqrqqph16l.execute-api.us-west-2.amazonaws.com/cards",
@@ -130,6 +134,7 @@ export class MyMCP extends McpAgent {
 				if (ids) url.searchParams.set("ids", ids);
 				if (bank) url.searchParams.set("bank", bank);
 				if (category) url.searchParams.set("category", category);
+				if (persona) url.searchParams.set("persona", persona);
 				// The API expects boolean parameters as strings if they are query params like ?noFee=true
 				if (noFee !== undefined) url.searchParams.set("noFee", String(noFee));
 
