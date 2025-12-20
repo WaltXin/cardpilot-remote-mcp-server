@@ -120,10 +120,11 @@ export class MyMCP extends McpAgent {
 					.enum(["average", "student", "newcomer", "premium"])
 					.optional()
 					.describe("Target persona for tailored ranking (average, student, newcomer, premium)"),
+				limit: z.number().optional().describe("Maximum number of cards to return (default: 5)"),
 			},
-			async ({ sort, direction, ids, bank, category, noFee, persona }) => {
+			async ({ sort, direction, ids, bank, category, noFee, persona, limit }) => {
 				console.log(
-					`Tool 'get-cards' called with params: ${JSON.stringify({ sort, direction, ids, bank, category, noFee, persona })}`
+					`Tool 'get-cards' called with params: ${JSON.stringify({ sort, direction, ids, bank, category, noFee, persona, limit })}`
 				);
 				const url = new URL(
 					"https://fqrqqph16l.execute-api.us-west-2.amazonaws.com/cards",
@@ -135,6 +136,7 @@ export class MyMCP extends McpAgent {
 				if (bank) url.searchParams.set("bank", bank);
 				if (category) url.searchParams.set("category", category);
 				if (persona) url.searchParams.set("persona", persona);
+				if (limit) url.searchParams.set("limit", String(limit));
 				// The API expects boolean parameters as strings if they are query params like ?noFee=true
 				if (noFee !== undefined) url.searchParams.set("noFee", String(noFee));
 
@@ -161,6 +163,11 @@ export class MyMCP extends McpAgent {
 
 					const data = (await response.json()) as CardResponse;
 					console.log(`Successfully fetched ${data.cards.length} cards`);
+
+					if (limit && data.cards.length > limit) {
+						data.cards = data.cards.slice(0, limit);
+						console.log(`Truncated to ${data.cards.length} cards due to limit`);
+					}
 
 					return {
 						content: [

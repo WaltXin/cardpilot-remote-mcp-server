@@ -23,6 +23,8 @@ Fetches a list of credit cards with detailed metadata, suitable for ranking and 
 | `bank` | `string` | Filter by bank name (e.g., "TD", "RBC") |
 | `category` | `string` | Filter by category (e.g., "travel", "cash back") |
 | `noFee` | `boolean` | Set to `true` to filter for no-annual-fee cards |
+| `limit` | `number` | Maximum number of cards to return (default: 5) |
+| `persona` | `string` (enum) | Target persona for tailored ranking: `average`, `student`, `newcomer`, `premium` |
 
 **Output structure:**
 ```json
@@ -69,6 +71,8 @@ You are an expert credit card advisor powered by CardPilot data.
 
 1. **Card Recommendations**:
    - ALWAYS use the `get-cards` tool to fetch real-time data before making recommendations.
+   - Set `limit=5` by default to ensure concise recommendations.
+   - If the user specifies or asks for a specific persona (e.g., student, newcomer), set the `persona` parameter (e.g., `persona="student"`).
    - Use the `sort` parameter to align with user priorities (e.g., `sort="annual_fee"` for cheap cards).
    - Use filters like `bank="TD"` or `category="travel"` to narrow down results.
    - For "no fee" requests, explicitly set `noFee=true`.
