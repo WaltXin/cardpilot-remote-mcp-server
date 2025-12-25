@@ -27,8 +27,287 @@ interface CardResponse {
 	};
 }
 
-// Define our MCP agent with tools
-export class MyMCP extends McpAgent {
+// AIDesign API Base URL
+const AIDESIGN_API_BASE = "https://ywe5uwfa7a.execute-api.us-west-2.amazonaws.com";
+
+// AIDesign MCP - Image processing tools
+export class AIDesignMCP extends McpAgent {
+	server = new McpServer({
+		name: "AIDesign Image Tools",
+		version: "1.0.0",
+	});
+
+	async init() {
+		console.log("Initializing AIDesignMCP agent...");
+
+		// Tool: get-upload-url
+		this.server.tool(
+			"get-upload-url",
+			{
+				fileType: z
+					.string()
+					.describe("MIME type of the file to upload (e.g., 'image/jpeg', 'image/png')"),
+			},
+			async ({ fileType }) => {
+				console.log(`Tool 'get-upload-url' called with fileType: ${fileType}`);
+				const url = `${AIDESIGN_API_BASE}/upload-url`;
+
+				try {
+					const response = await fetch(url, {
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+							Accept: "application/json",
+						},
+						body: JSON.stringify({ fileType }),
+					});
+
+					if (!response.ok) {
+						console.error(`Error getting upload URL: ${response.status} ${response.statusText}`);
+						return {
+							content: [{ type: "text", text: `Error: ${response.status} ${response.statusText}` }],
+							isError: true,
+						};
+					}
+
+					const data = await response.json();
+					console.log("Successfully got upload URL");
+					return {
+						content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+					};
+				} catch (error) {
+					const errorMessage = error instanceof Error ? error.message : String(error);
+					console.error(`Fetch exception: ${errorMessage}`);
+					return {
+						content: [{ type: "text", text: `Failed to get upload URL: ${errorMessage}` }],
+						isError: true,
+					};
+				}
+			}
+		);
+
+		// Tool: process-image
+		this.server.tool(
+			"process-image",
+			{
+				imageKey: z
+					.string()
+					.describe("S3 key of the uploaded image (returned from get-upload-url)"),
+				prompt: z
+					.string()
+					.describe("Instructions for how to process the image with AI"),
+			},
+			async ({ imageKey, prompt }) => {
+				console.log(`Tool 'process-image' called with imageKey: ${imageKey}`);
+				const url = `${AIDESIGN_API_BASE}/process`;
+
+				try {
+					const response = await fetch(url, {
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+							Accept: "application/json",
+						},
+						body: JSON.stringify({ imageKey, prompt }),
+					});
+
+					if (!response.ok) {
+						console.error(`Error processing image: ${response.status} ${response.statusText}`);
+						return {
+							content: [{ type: "text", text: `Error: ${response.status} ${response.statusText}` }],
+							isError: true,
+						};
+					}
+
+					const data = await response.json();
+					console.log("Successfully processed image");
+					return {
+						content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+					};
+				} catch (error) {
+					const errorMessage = error instanceof Error ? error.message : String(error);
+					console.error(`Fetch exception: ${errorMessage}`);
+					return {
+						content: [{ type: "text", text: `Failed to process image: ${errorMessage}` }],
+						isError: true,
+					};
+				}
+			}
+		);
+
+		// Tool: list-products
+		this.server.tool(
+			"list-products",
+			{
+				category: z
+					.string()
+					.optional()
+					.describe("Filter products by category (e.g., 'rings', 'necklaces')"),
+			},
+			async ({ category }) => {
+				console.log(`Tool 'list-products' called with category: ${category}`);
+				const url = new URL(`${AIDESIGN_API_BASE}/product`);
+				if (category) url.searchParams.set("category", category);
+
+				try {
+					const response = await fetch(url.toString(), {
+						headers: { Accept: "application/json" },
+					});
+
+					if (!response.ok) {
+						console.error(`Error listing products: ${response.status} ${response.statusText}`);
+						return {
+							content: [{ type: "text", text: `Error: ${response.status} ${response.statusText}` }],
+							isError: true,
+						};
+					}
+
+					const data = await response.json();
+					console.log("Successfully listed products");
+					return {
+						content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+					};
+				} catch (error) {
+					const errorMessage = error instanceof Error ? error.message : String(error);
+					console.error(`Fetch exception: ${errorMessage}`);
+					return {
+						content: [{ type: "text", text: `Failed to list products: ${errorMessage}` }],
+						isError: true,
+					};
+				}
+			}
+		);
+
+		// Tool: process-image-direct - Simplified single-step image processing
+		// Accepts either base64 or a public URL, handles upload internally
+		this.server.tool(
+			"process-image-direct",
+			{
+				imageBase64: z
+					.string()
+					.optional()
+					.describe("Base64-encoded image data (without data URI prefix). Use this when user attaches an image."),
+				imageUrl: z
+					.string()
+					.optional()
+					.describe("Public URL of an image to process. Use this when user provides a link."),
+				prompt: z
+					.string()
+					.describe("Instructions for how to process/transform the image with AI (e.g., 'Make it look professional', 'Remove the background')"),
+			},
+			async ({ imageBase64, imageUrl, prompt }) => {
+				console.log(`Tool 'process-image-direct' called with prompt: ${prompt?.substring(0, 50)}...`);
+
+				// Validate that at least one image source is provided
+				if (!imageBase64 && !imageUrl) {
+					return {
+						content: [{ type: "text", text: "Error: Please provide either imageBase64 or imageUrl" }],
+						isError: true,
+					};
+				}
+
+				try {
+					// Step 1: If URL provided, fetch the image and convert to base64
+					let base64Data = imageBase64;
+					let mimeType = "image/png"; // default
+
+					if (imageUrl && !imageBase64) {
+						console.log(`Fetching image from URL: ${imageUrl}`);
+						const imageResponse = await fetch(imageUrl);
+						if (!imageResponse.ok) {
+							return {
+								content: [{ type: "text", text: `Error fetching image from URL: ${imageResponse.status}` }],
+								isError: true,
+							};
+						}
+						const contentType = imageResponse.headers.get("content-type");
+						if (contentType) mimeType = contentType;
+						const arrayBuffer = await imageResponse.arrayBuffer();
+						const uint8Array = new Uint8Array(arrayBuffer);
+						// Convert to base64 in Cloudflare Workers
+						base64Data = btoa(String.fromCharCode(...uint8Array));
+					}
+
+					// Step 2: Get upload URL from backend
+					console.log("Getting upload URL from backend...");
+					const uploadUrlResponse = await fetch(`${AIDESIGN_API_BASE}/upload-url`, {
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+							Accept: "application/json",
+						},
+						body: JSON.stringify({ fileType: mimeType }),
+					});
+
+					if (!uploadUrlResponse.ok) {
+						return {
+							content: [{ type: "text", text: `Error getting upload URL: ${uploadUrlResponse.status}` }],
+							isError: true,
+						};
+					}
+
+					const { uploadUrl, imageKey } = (await uploadUrlResponse.json()) as { uploadUrl: string; imageKey: string };
+					console.log(`Got upload URL, imageKey: ${imageKey}`);
+
+					// Step 3: Upload the image to S3
+					console.log("Uploading image to S3...");
+					const binaryData = Uint8Array.from(atob(base64Data!), c => c.charCodeAt(0));
+					const uploadResponse = await fetch(uploadUrl, {
+						method: "PUT",
+						headers: {
+							"Content-Type": mimeType,
+						},
+						body: binaryData,
+					});
+
+					if (!uploadResponse.ok) {
+						const errorText = await uploadResponse.text();
+						console.error(`S3 upload failed: ${uploadResponse.status} - ${errorText}`);
+						return {
+							content: [{ type: "text", text: `Error uploading to S3: ${uploadResponse.status}` }],
+							isError: true,
+						};
+					}
+					console.log("Image uploaded successfully");
+
+					// Step 4: Process the image with Gemini
+					console.log("Processing image with Gemini...");
+					const processResponse = await fetch(`${AIDESIGN_API_BASE}/process`, {
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+							Accept: "application/json",
+						},
+						body: JSON.stringify({ imageKey, prompt }),
+					});
+
+					if (!processResponse.ok) {
+						return {
+							content: [{ type: "text", text: `Error processing image: ${processResponse.status}` }],
+							isError: true,
+						};
+					}
+
+					const result = await processResponse.json();
+					console.log("Image processed successfully");
+					return {
+						content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+					};
+				} catch (error) {
+					const errorMessage = error instanceof Error ? error.message : String(error);
+					console.error(`process-image-direct exception: ${errorMessage}`);
+					return {
+						content: [{ type: "text", text: `Failed to process image: ${errorMessage}` }],
+						isError: true,
+					};
+				}
+			}
+		);
+	}
+}
+
+// CardPilot MCP - Credit card tools
+export class CardPilotMCP extends McpAgent {
 	server = new McpServer({
 		name: "CardPilot Cards",
 		version: "1.0.0",
@@ -308,17 +587,30 @@ export default {
 			// GET = SSE transport (older, still supported)
 			if (request.method === "POST") {
 				console.log("Using Streamable HTTP transport (POST)");
-				return addCorsAndPings(MyMCP.serve("/sse").fetch(request, env, ctx));
+				return addCorsAndPings(CardPilotMCP.serve("/sse").fetch(request, env, ctx));
 			} else {
 				console.log("Using SSE transport (GET)");
-				return addCorsAndPings(MyMCP.serveSSE("/sse").fetch(request, env, ctx));
+				return addCorsAndPings(CardPilotMCP.serveSSE("/sse").fetch(request, env, ctx));
 			}
 		}
 
-		// Handle /mcp endpoint - Streamable HTTP only
+		// Handle /mcp endpoint - Streamable HTTP only (CardPilot)
 		if (url.pathname === "/mcp" || url.pathname.startsWith("/mcp/")) {
 			console.log("Handling /mcp request");
-			return addCorsAndPings(MyMCP.serve("/mcp").fetch(request, env, ctx));
+			return addCorsAndPings(CardPilotMCP.serve("/mcp").fetch(request, env, ctx));
+		}
+
+		// Handle /other endpoint - AIDesign tools
+		if (url.pathname === "/other" || url.pathname.startsWith("/other/")) {
+			console.log(`Handling /other request: ${request.method}`);
+
+			if (request.method === "POST") {
+				console.log("Using Streamable HTTP transport (POST) for AIDesign");
+				return addCorsAndPings(AIDesignMCP.serve("/other", { binding: "AIDESIGN_MCP_OBJECT" }).fetch(request, env, ctx));
+			} else {
+				console.log("Using SSE transport (GET) for AIDesign");
+				return addCorsAndPings(AIDesignMCP.serveSSE("/other", { binding: "AIDESIGN_MCP_OBJECT" }).fetch(request, env, ctx));
+			}
 		}
 
 		console.warn(`404 Not Found: ${url.pathname}`);
