@@ -23,29 +23,13 @@
 				"MyMCP"
 			],
 			"tag": "v1"
-		},
-		{
-			"renamed_classes": [
-				{
-					"from": "MyMCP",
-					"to": "CardPilotMCP"
-				}
-			],
-			"new_sqlite_classes": [
-				"AIDesignMCP"
-			],
-			"tag": "v2"
 		}
 	],
 	"durable_objects": {
 		"bindings": [
 			{
-				"class_name": "CardPilotMCP",
+				"class_name": "MyMCP",
 				"name": "MCP_OBJECT"
-			},
-			{
-				"class_name": "AIDesignMCP",
-				"name": "AIDESIGN_MCP_OBJECT"
 			}
 		]
 	},
